@@ -8,9 +8,9 @@
 #define N 10000000
 const int NUM_ITERATIONS = 5;
 
- double get_time_ms(struct timespec start, struct timespec end) {
-	return (end.tv_sec-start.tv_sec + 0.000000001*(end.tv_nsec-start.tv_nsec)) * 1000;
- }
+double get_time_ms(struct timespec start, struct timespec end) {
+    return (end.tv_sec-start.tv_sec + 0.000000001*(end.tv_nsec-start.tv_nsec)) * 1000;
+}
 
 FLP_TYPE compute_sum_sin_gpu() {
     FLP_TYPE* sin_arr = (FLP_TYPE*) malloc(sizeof(FLP_TYPE) * N);
@@ -20,14 +20,12 @@ FLP_TYPE compute_sum_sin_gpu() {
     #pragma acc data create(sin_arr[0:N]) 
     {
 
-    #pragma acc kernels
-
+        #pragma acc kernels
         for (int i = 0; i < N; i++) {
             sin_arr[i] = sin(i * step);
         }    
 
-    #pragma acc kernels loop reduction(+:sum_sin)
-        
+        #pragma acc kernels loop reduction(+:sum_sin)
         for (int i = 0; i < N; i++) {
             sum_sin += sin_arr[i];
         }
