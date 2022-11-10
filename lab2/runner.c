@@ -32,6 +32,11 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
+    int error_calc_interval = 1;
+    if (argc >= 5) {
+        error_calc_interval = atoi(argv[4]);
+    }
+
     struct timespec start, end;
     double total_elapsed = 0;
     SOLVE_RESULT result;
@@ -40,7 +45,7 @@ int main(int argc, const char* argv[]) {
         init_grid(grid, grid_size);
 
         clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-        result = solve_heat_equation(grid, grid_size, num_iterations, error_rate);
+        result = solve_heat_equation(grid, grid_size, num_iterations, error_rate, error_calc_interval);
         clock_gettime(CLOCK_MONOTONIC_RAW, &end);
         total_elapsed += get_time_ms(start, end);
         free(grid);
