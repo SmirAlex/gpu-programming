@@ -33,6 +33,18 @@ void init_grid(double* grid, int grid_size) {
 	}
 }
 
+#pragma acc routine seq
+static int calc_new_grid_element(double* grid1, double* grid2, int N, int i , int j) {
+	int grid_index = i * N + j;
+	grid2[grid_index] = HEAT_COEF * (
+		grid1[grid_index - N] + // A[i - 1][j]
+		grid1[grid_index + N] + // A[i + 1][j]
+		grid1[grid_index - 1] + // A[i][j - 1]
+		grid1[grid_index + 1]   // A[i][j + 1]
+	); 
+	return grid_index;
+}
+
 SOLVE_RESULT solve_heat_equation(double* grid, int grid_size, int max_iter, double error_rate, int error_calc_interval) {
 	int N = grid_size;
 	double* current_grid = (double*) malloc(sizeof(double) * N * N);
@@ -52,40 +64,30 @@ SOLVE_RESULT solve_heat_equation(double* grid, int grid_size, int max_iter, doub
 		}
 
 		for (num_iter = 0; num_iter < max_iter && error > error_rate; num_iter++) {
-
+			int next_num_iter = num_iter + 1;
 			#pragma acc data present(next_grid [0:N*N], current_grid [0:N*N]) 
 			{
 				// calc error only on every n'th iteration or on last iteration
-				if (num_iter % error_calc_interval == 0 || num_iter == max_iter - 1) {
+				if (next_num_iter % error_calc_interval == 0 || next_num_iter == max_iter) {
 					error = 0.0;
+					#pragma acc wait
 					#pragma acc kernels loop independent collapse(2) reduction(max:error)
 					for (int i = 1; i < N - 1; i++) {
 						for (int j = 1; j < N - 1; j++) {
-							int grid_index = i * N + j;
-							next_grid[grid_index] = HEAT_COEF * (
-								current_grid[grid_index - N] + // A[i - 1][j]
-								current_grid[grid_index + N] + // A[i + 1][j]
-								current_grid[grid_index - 1] + // A[i][j - 1]
-								current_grid[grid_index + 1]   // A[i][j + 1]
-							); 
+							int grid_index = calc_new_grid_element(current_grid, next_grid, N, i, j);
 							error = fmax(error, fabs(next_grid[grid_index] - current_grid[grid_index]));
 						}
 					}
 				} else {
-					#pragma acc kernels loop independent collapse(2)
+					#pragma acc kernels async loop independent collapse(2)
 					for (int i = 1; i < N - 1; i++) {
 						for (int j = 1; j < N - 1; j++) {
-							int grid_index = i * N + j;
-							next_grid[grid_index] = HEAT_COEF * (
-								current_grid[grid_index - N] + // A[i - 1][j]
-								current_grid[grid_index + N] + // A[i + 1][j]
-								current_grid[grid_index - 1] + // A[i][j - 1]
-								current_grid[grid_index + 1]   // A[i][j + 1]
-							); 
+							calc_new_grid_element(current_grid, next_grid, N, i, j);
 						}
 					}
 				}
 			}
+			
 			double* tmp_grid = current_grid;
 			current_grid = next_grid;
 			next_grid = tmp_grid;
