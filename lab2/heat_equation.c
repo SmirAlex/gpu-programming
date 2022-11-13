@@ -45,65 +45,83 @@ static int calc_new_grid_element(double* grid1, double* grid2, int N, int i , in
 	return grid_index;
 }
 
-SOLVE_RESULT solve_heat_equation(double* grid, int grid_size, int max_iter, double error_rate, int error_calc_interval) {
+SOLVE_RESULT solve_heat_equation(double* init_grid, int grid_size, int max_iter, double error_rate, int error_calc_interval) {
 	int N = grid_size;
-	double* current_grid = (double*) malloc(sizeof(double) * N * N);
-	double* next_grid = (double*) malloc(sizeof(double) * N * N);
+	double* grid1 = (double*) malloc(sizeof(double) * N * N);
+	double* grid2 = (double*) malloc(sizeof(double) * N * N);
 	double error = INFINITY;
 	int num_iter = 0;
 
-	#pragma acc data copy(grid [0:N*N]) create(current_grid [0:N*N]) create(next_grid [0:N*N])
+	// due to avoid swap optimization we do only even number of iterations
+	if (error_calc_interval % 2 == 1) {
+		error_calc_interval++;
+	}
+
+	#pragma acc data copy(init_grid [0:N*N]) create(grid1 [0:N*N]) create(grid2 [0:N*N])
 	{
 		#pragma acc kernels loop independent collapse(2)
 		for (int i = 0; i < N; i++) {
 			for (int j = 0; j < N; j++) {
 				int grid_index = i * N + j;
-				current_grid[grid_index] = grid[grid_index];
-				next_grid[grid_index] = grid[grid_index];
+				grid1[grid_index] = init_grid[grid_index];
+				grid2[grid_index] = init_grid[grid_index];
 			}
 		}
 
-		for (num_iter = 0; num_iter < max_iter && error > error_rate; num_iter++) {
-			int next_num_iter = num_iter + 1;
-			#pragma acc data present(next_grid [0:N*N], current_grid [0:N*N]) 
-			{
-				// calc error only on every n'th iteration or on last iteration
-				if (next_num_iter % error_calc_interval == 0 || next_num_iter == max_iter) {
-					error = 0.0;
-					#pragma acc wait
-					#pragma acc kernels loop independent collapse(2) reduction(max:error)
+		for (num_iter = 0; num_iter < max_iter && error > error_rate; num_iter += 2) {
+			int next_num_iter = num_iter + 2;
+			// calc error only on every n'th iteration or on last iteration
+			if (next_num_iter % error_calc_interval == 0 || next_num_iter >= max_iter) {
+				error = 0.0;
+				#pragma acc wait
+				#pragma acc data present(grid2 [0:N*N], grid1 [0:N*N]) copy(error)
+				#pragma acc kernels 
+				{
+					#pragma acc loop independent collapse(2)
 					for (int i = 1; i < N - 1; i++) {
 						for (int j = 1; j < N - 1; j++) {
-							int grid_index = calc_new_grid_element(current_grid, next_grid, N, i, j);
-							error = fmax(error, fabs(next_grid[grid_index] - current_grid[grid_index]));
+							calc_new_grid_element(grid1, grid2, N, i, j);
 						}
 					}
-				} else {
-					#pragma acc kernels async loop independent collapse(2)
+					#pragma acc loop independent collapse(2) reduction(max:error)
 					for (int i = 1; i < N - 1; i++) {
 						for (int j = 1; j < N - 1; j++) {
-							calc_new_grid_element(current_grid, next_grid, N, i, j);
+							int grid_index = calc_new_grid_element(grid2, grid1, N, i, j);
+							error = fmax(error, fabs(grid2[grid_index] - grid1[grid_index]));
 						}
 					}
 				}
-			}
-			
-			double* tmp_grid = current_grid;
-			current_grid = next_grid;
-			next_grid = tmp_grid;
+			} else {
+				#pragma acc data present(grid2 [0:N*N], grid1 [0:N*N]) 
+				#pragma acc kernels async 
+				{
+					#pragma acc loop independent collapse(2)
+					for (int i = 1; i < N - 1; i++) {
+						for (int j = 1; j < N - 1; j++) {
+							calc_new_grid_element(grid1, grid2, N, i, j);
+						}
+					}
+					#pragma acc loop independent collapse(2)
+					for (int i = 1; i < N - 1; i++) {
+						for (int j = 1; j < N - 1; j++) {
+							calc_new_grid_element(grid2, grid1, N, i, j);
+						}
+					}
+				}
+			}	
 		}
 
 		#pragma acc kernels loop independent collapse(2)
 		for (int i = 0; i < N; i++) {
 			for (int j = 0; j < N; j++) {
 				int grid_index = i * N + j;
-				grid[grid_index] = current_grid[grid_index];
+				init_grid[grid_index] = grid1[grid_index];
 			}
 		}
 	}
 
-	free(current_grid);
-	free(next_grid);
+	free(grid1);
+	free(grid2);
 
 	return (SOLVE_RESULT) {error, num_iter};
 }
