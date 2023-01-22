@@ -19,8 +19,11 @@ static const int GRID_SIZES[] = {128, 256, 512};
 static const double GRID_CORNER_VALUES[] = {10, 20, 30, 20};
 static const double HEAT_COEF = 0.25;
 
-void init_grid(double* grid, int grid_size);
+void init_grid(double* grid, unsigned int N);
 
-SOLVE_RESULT solve_heat_equation(double* grid, int grid_size, int max_iter, double error_rate, int error_calc_interval);
+SOLVE_RESULT solve_heat_equation(
+    double* grid, unsigned int N, unsigned int max_iter, 
+    double error_rate, unsigned int error_calc_interval
+);
 
 #endif //  HEAT_EQUATION_H
